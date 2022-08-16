@@ -9,7 +9,7 @@ setup(
     author_email="hgbrown@unimelb.edu.au",
     url="https://github.com/HamishGBrown/measureIce/",
     packages=find_packages(),
-    scripts=['Generate_MeasureIce_calibration.py', 'MeasureIce.py'],
+    scripts=['Generate_MeasureIce_calibration.py', 'MeasureIce.py','ser.py'],
     install_requires=[
         "h5py >= 2.10",
         "ipython >= 4.0",
