@@ -11,6 +11,11 @@ import torch
 import os
 import torch
 
+#define some constants here
+elementary_charge = 1.602176565e-19
+electron_rest_mass = 9.10938356E-31  # in Kg
+speed_of_light = 299792458.0
+
 def straight_line(x, m):
     """ Straight line function y=f(x) """
     return m*x
@@ -22,7 +27,6 @@ def straight_line_w_intercept(x,m,c):
 
 def invA_to_mrad(invA, eV):
     """Convert inverse Angstrom to mrad
-
     Parameters
     ----------
     invA : Reciprocal space length in inverse Angstrom to be converted
@@ -33,7 +37,6 @@ def invA_to_mrad(invA, eV):
 
 def mrad_to_invA(mrad, eV):
     """Convert mrad to inverse Angstrom
-
     Parameters
     ----------
     mrad : Reciprocal space length in inverse Angstrom to be converted
@@ -48,7 +51,6 @@ def apply_objective_aperture(
     """
     Applies an objective aperture in reciprocal space to an electron
     wave function.
-
     Parameters
     ----------
     psi: array_like (ny,nx)
@@ -85,7 +87,6 @@ def apply_objective_aperture(
 def plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV):
     """
     Calculate the normalized plasmon scattering cross-section
-
     Parameters
     ----------
     gridshape : (2,) array_like
@@ -111,7 +112,6 @@ def n_scatt_events(t, t_mfp, cutoff=0.01):
     """
     Calculate probabilities for different number of scattering events
     up to cutoff (capture 99% of scattering events by default)
-
     Parameters
     ----------
     t : float
@@ -119,7 +119,6 @@ def n_scatt_events(t, t_mfp, cutoff=0.01):
     t_mfp : float
     Mean free path for scattering
     cutoff : float, optional
-
     Returns
     -------
     Pn : list
@@ -155,7 +154,6 @@ def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp):
     """
     Apply Plasmon inelastic scattering to Diffraction pattern
     incorporating only elastic scattering
-
     Parameters
     ----------
     DP : (ny,nx) array_like
@@ -195,7 +193,6 @@ def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp):
 def get_t(structurefilename):
     """
     Get the thickness from the file.
-
     Doesn't incur the overhead of loading the whole structure.
     """
     from re import split
@@ -235,13 +232,10 @@ def tile_out_amorphous_structure(structure, ny, nx):
 def imfp(E, Mw=18.015, rho=920e3, Z=10):
     """
     Calculates inelastic mean free path using Eq.(8) of:
-
     Vulović, Miloš, et al. "Image formation modeling in cryo-electron
     microscopy." Journal of structural biology 183.1 (2013): 19-32.
-
     This is approximate, but if scaled to match experimental measurements
     gives a useful interpolation for unmeasured electron energies
-
     Parameters:
     E : float
     Electron energy in keV
@@ -292,6 +286,54 @@ def carbon_imfp(eV):
     func = interp1d(data[0],data[1])
     return func(eV)
 
+def getMomentum(eV):
+    """
+    Cauclate the relativistic momentum of an electron
+
+    Parameters
+    ----------
+    eV, float : Electron energy in eV
+    """
+    Vo = eV * elementary_charge
+    betaSquared = 1 - (electron_rest_mass * speed_of_light**2 / (Vo + electron_rest_mass * speed_of_light**2)) ** 2
+    vSquared = betaSquared * speed_of_light**2
+    gamma_param = 1/(1-(vSquared/speed_of_light**2))**0.5
+    momentum = gamma_param * electron_rest_mass * (vSquared**0.5)
+    return momentum
+
+
+def getThetaE(eV):
+    """
+    Cauclate a list of thetaE values for each energy loss
+
+    Parameters
+    ----------
+    eV, float : Electron energy in eV
+    """
+    #first load the EELs file
+    en_loss = []
+    fractions = []
+    filename = "icefractions.csv"
+    with open(filename, 'r') as f:
+        for line in f.readlines():
+            l = line.split(',')
+            en_loss.append(float(l[0]))
+            fractions.append(float(l[1]))
+    #get momentum for starting energy
+    starting_momentum = getMomentum(eV)
+    
+    #get thetaE and thetaC (plasmon cut-off angle) for each energy
+    thetaE = []
+    thetaC = []
+    for val in en_loss:
+        En = eV - val
+        this_momentum = getMomentum(En)
+        delta_p = starting_momentum - this_momentum
+        this_thetaE = (delta_p/starting_momentum)*2*np.pi  #in rad
+        thetaE.append(this_thetaE)
+        thetaC.append((2*this_thetaE)**0.5)
+    return [fractions, thetaE, thetaC]
+
 def generate_calibration_curves(
     keV,
     obj_apertures,
@@ -311,7 +353,6 @@ def generate_calibration_curves(
     """
     For a given accelerating voltage and set of apertures generate a set
     of calibration curves
-
     Parameters
     ----------
     keV, float : Electron energy in keV
@@ -325,7 +366,6 @@ def generate_calibration_curves(
     device_type : string
     Either 'cpu' or 'gpu', if None (default) then pytorch will try to use
     any gpu available
-
     """
 
     # Get mean free path for plasmon (ie. inelastic) scattering,
@@ -349,6 +389,11 @@ def generate_calibration_curves(
     # Since this mainly effects small angle inelastic scattering the result is
     # not so sensitive to it.
     theta_E = (0.12 - 0.26) / (3e5 - 1.2e5) * (eV - 1.2e5) + 0.26
+    #calculate the theta_E array for each energy, also get the weights, also ge theta_C array ofc
+    theta_data = getThetaE(eV)
+    inel_en_weights = theta_data[0]
+    theta_E_list = theta_data[1]
+    theta_C_list = theta_data[2]
 
     # Generate thickness list
     thicknesses = np.arange(dt, tmax + 1, dt)
@@ -571,14 +616,12 @@ def save_calibrationhdf5(
 def fit_straight_line(x,y,force_zero_origin=False):
     """
     For arrays x and y fit a straight line and return the slope and intercept.
-
     Parameters
     ----------
     x, array_like (n,) : x datapoints
     y, array_like (n,) : y datapoints
     force_zero_origin, bool, optional : If True (default) force an axis
                                         intercept at (0,0)
-
     """
     from scipy.optimize import curve_fit
     # The origin is an optional parameter in the straight_line function
