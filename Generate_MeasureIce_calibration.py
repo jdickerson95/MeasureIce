@@ -84,9 +84,10 @@ def apply_objective_aperture(
     return psi * app
 
 
-def plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV):
+def plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV, theta_C):
     """
     Calculate the normalized plasmon scattering cross-section
+
     Parameters
     ----------
     gridshape : (2,) array_like
@@ -98,10 +99,28 @@ def plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV):
     eV : float
     Electron energy in eV
     """
-    qy, qx = pyms.utils.q_space_array(gridshape, gridsize)
     te = theta_E * pyms.wavev(eV) * 1e-3
-    xsec = 1 / (te ** 2 + qy ** 2 + qx ** 2)
-    return xsec / np.sum(xsec)
+    tc = theta_C * pyms.wavev(eV) * 1e-3
+    #print(f"tc is: {tc}")
+    #print(f"gridsize: {gridsize}")
+    #tc_nyquist = 
+    shape = []
+    for i in range(2):
+          shape.append((2*gridsize[i])*tc)
+    gridshape2=[int(shape[0]), int(shape[1])] # this shape now has tc at nyquist
+    #print(f"gridshape2: {gridshape2}")
+    qy, qx = pyms.utils.q_space_array(gridshape, gridsize)
+    qy2, qx2 = pyms.utils.q_space_array(gridshape2, gridsize)
+
+    tq = (qy ** 2 + qx ** 2)**0.5
+    tq2 = (qy2 ** 2 + qx2 ** 2)**0.5
+    nyquist = np.amax(tq)/2
+    xsec = 1 / (te ** 2 + tq ** 2)
+    xsec2 = 1 / (te ** 2 + tq2 ** 2)
+    if  nyquist > tc:
+        over_indices = np.argwhere(tq > tc)
+        xsec[over_indices] = 0
+    return xsec / np.sum(xsec2)
 
 
 def scattering_probability(t, t_mfp, n):
@@ -150,7 +169,7 @@ def n_scatt_events(t, t_mfp, cutoff=0.01):
     return Pn
 
 
-def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp):
+def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C):
     """
     Apply Plasmon inelastic scattering to Diffraction pattern
     incorporating only elastic scattering
@@ -173,7 +192,7 @@ def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp):
     """
     #
     Pn = n_scatt_events(t, t_mfp)
-    xsec = plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV)
+    xsec = plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV, theta_C)
 
     # Add contribution of (only) elastically electrons
     DP_out = DP * Pn[0]
@@ -389,6 +408,7 @@ def generate_calibration_curves(
     # Since this mainly effects small angle inelastic scattering the result is
     # not so sensitive to it.
     theta_E = (0.12 - 0.26) / (3e5 - 1.2e5) * (eV - 1.2e5) + 0.26
+    theta_C = ((2*theta_E*1E-3)**0.5)*1E3  #mrad
     #calculate the theta_E array for each energy, also get the weights, also ge theta_C array ofc
     theta_data = getThetaE(eV)
     inel_en_weights = theta_data[0]
@@ -499,7 +519,7 @@ def generate_calibration_curves(
         # Apply plasmon scattering to Reciprocal space intensity
         # (assume incoherent energy channels -- don't tell Prof. Peter Schattschneider)
         if carbon_thickness is not None:
-            DP_inel = plas_scatt(DP, gridshape, gridsize, theta_E, eV, carbon_thickness*10, carbon_imfp(eV)*10)
+            DP_inel = plas_scatt(DP, gridshape, gridsize, theta_E, eV, carbon_thickness*10, carbon_imfp(eV)*10, theta_C)
         # Apply objective aperture to Recipiprocal space intensity
         DP_inel = apply_objective_aperture(
             DP_inel, gridsize, apps, eV, qspace_in=True, app_units=app_units
@@ -535,8 +555,8 @@ def generate_calibration_curves(
         # Apply plasmon scattering to Reciprocal space intensity
         # (assume incoherent energy channels -- don't tell Prof. Peter Schattschneider)
         if carbon_thickness is not None:
-            DP = plas_scatt(DP, gridshape, gridsize, theta_E, eV, carbon_thickness*10, carbon_imfp(eV)*10)
-        DP_inel = plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, lambda_d)
+            DP = plas_scatt(DP, gridshape, gridsize, theta_E, eV, carbon_thickness*10, carbon_imfp(eV)*10, theta_C)
+        DP_inel = plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, lambda_d, theta_C)
 
 
         # Apply objective aperture to Recipiprocal space intensity
