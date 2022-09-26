@@ -169,10 +169,11 @@ def n_scatt_events(t, t_mfp, cutoff=0.01):
     return Pn
 
 
-def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C):
+def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C, inel_en_weights, theta_E_list, theta_C_list):
     """
     Apply Plasmon inelastic scattering to Diffraction pattern
     incorporating only elastic scattering
+
     Parameters
     ----------
     DP : (ny,nx) array_like
@@ -192,7 +193,15 @@ def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C):
     """
     #
     Pn = n_scatt_events(t, t_mfp)
-    xsec = plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV, theta_C)
+    #xsec = plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV, theta_C)
+    
+    #instead, get xsec as a weighted average
+    xsec = 0.0
+    for i, inel_weight in enumerate(inel_en_weights):
+        print(f"thetaE_old={theta_E}")
+        print(f"thetaE_list={theta_E_list[i]}")
+        print(f"thetaC_list={theta_C_list[i]}")
+        xsec += inel_weight * plasmon_scattering_cross_section(gridshape, gridsize, theta_E_list[i], eV, theta_C_list[i])
 
     # Add contribution of (only) elastically electrons
     DP_out = DP * Pn[0]
@@ -349,8 +358,8 @@ def getThetaE(eV):
         this_momentum = getMomentum(En)
         delta_p = starting_momentum - this_momentum
         this_thetaE = (delta_p/starting_momentum)*2*np.pi  #in rad
-        thetaE.append(this_thetaE)
-        thetaC.append((2*this_thetaE)**0.5)
+        thetaE.append(this_thetaE*1E3)
+        thetaC.append(((2*this_thetaE)**0.5)*1E3)
     return [fractions, thetaE, thetaC]
 
 def generate_calibration_curves(
