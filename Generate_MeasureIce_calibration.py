@@ -169,7 +169,7 @@ def n_scatt_events(t, t_mfp, cutoff=0.01):
     return Pn
 
 
-def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C, inel_en_weights, theta_E_list, theta_C_list):
+def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C, inel_en_weights, theta_E_list, theta_C_list, xsec):
     """
     Apply Plasmon inelastic scattering to Diffraction pattern
     incorporating only elastic scattering
@@ -194,7 +194,8 @@ def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C, inel_en_
     #
     Pn = n_scatt_events(t, t_mfp)
     #xsec = plasmon_scattering_cross_section(gridshape, gridsize, theta_E, eV, theta_C)
-    
+
+    '''
     #instead, get xsec as a weighted average
     xsec = 0.0
     for i, inel_weight in enumerate(inel_en_weights):
@@ -202,7 +203,7 @@ def plas_scatt(DP, gridshape, gridsize, theta_E, eV, t, t_mfp, theta_C, inel_en_
         print(f"thetaE_list={theta_E_list[i]}")
         print(f"thetaC_list={theta_C_list[i]}")
         xsec += inel_weight * plasmon_scattering_cross_section(gridshape, gridsize, theta_E_list[i], eV, theta_C_list[i])
-
+    '''
     # Add contribution of (only) elastically electrons
     DP_out = DP * Pn[0]
 
@@ -480,6 +481,14 @@ def generate_calibration_curves(
 
     # Generate illumination
     illum = torch.from_numpy(pyms.plane_wave_illumination(gridshape, gridsize, eV, qspace=True))
+
+    #Calculate xsec here
+    xsec = 0.0
+    for i, inel_weight in enumerate(inel_en_weights):
+        print(f"thetaE_old={theta_E}")
+        print(f"thetaE_list={theta_E_list[i]}")
+        print(f"thetaC_list={theta_C_list[i]}")
+        xsec += inel_weight * plasmon_scattering_cross_section(gridshape, gridsize, theta_E_list[i], eV, theta_C_list[i])
 
     # Option to calculate carbon thickness
     if carbon_thickness is not None:
